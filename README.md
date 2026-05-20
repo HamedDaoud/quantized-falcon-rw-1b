@@ -1,67 +1,153 @@
-# Falcon-RW 1B Quantized Text Generation
+# Falcon-RW 1B — 4-bit NF4 Quantized Text Generation
 
-![Demo](./assets/demo.png)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)
+![Transformers](https://img.shields.io/badge/Transformers-4.40%2B-FFD21E?logo=huggingface&logoColor=black)
+![Gradio](https://img.shields.io/badge/UI-Gradio-F97316?logo=gradio&logoColor=white)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
-## Overview
-This project implements a text generation application using a 4-bit quantized version of the Falcon-RW 1B language model, integrated with a Streamlit-based user interface for real-time interaction. The application leverages Python 3.10 and demonstrates efficient deployment of large language models through quantization techniques, enabling reduced memory usage and inference on resource-constrained environments, such as consumer-grade CPUs or GPUs. The project utilizes 4-bit NormalFloat (NF4) quantization with double quantization, facilitated by the `bitsandbytes` library, alongside optimized model loading and inference workflows.
+_Live demo recording coming soon — fresh screen capture of the Gradio UI to replace the prior Streamlit screenshot._
 
-## Features
-- **Quantized Model**: Employs 4-bit NF4 quantization to compress the Falcon-RW 1B model, minimizing memory usage while preserving generation quality.
-- **Efficient Inference**: Supports inference on CPU or GPU with automatic device detection and optimized settings using `torch.bfloat16` compute dtype.
-- **Interactive Interface**: Provides a Streamlit-based frontend for inputting prompts and displaying generated text.
-- **Cached Model Loading**: Uses `@st.cache_resource` to load the model and tokenizer once, ensuring fast startup and response times.
+A text generation application that loads [`tiiuae/falcon-rw-1b`](https://huggingface.co/tiiuae/falcon-rw-1b) under **4-bit NormalFloat (NF4) quantization** with **double quantization** via `bitsandbytes`, exposed through both a Gradio UI and a FastAPI service. The 4-bit weights are paired with a `bfloat16` compute dtype, reducing the model's memory footprint by approximately **75% versus float32** while preserving generation quality.
 
-## Technologies
-- **Python Version**: 3.10
-- **Core Libraries**:
-  - `transformers`: Handles model and tokenizer operations.
-  - `bitsandbytes`: Enables 4-bit quantization and double quantization.
-  - `torch`: Manages tensor operations and model inference.
-  - `accelerate`: Optimizes model loading and device management.
-  - `streamlit`: Powers the web-based user interface.
+> **About the model.** Falcon-RW-1B is a 1.3B-parameter *base* language model — it completes text rather than following instructions, and at this size it's well below the capability of modern instruction-tuned chat models. **This project's contribution is the quantization technique, deployment surface, and device-fallback engineering — not state-of-the-art generation quality.** Prompts that work best are the start of a passage rather than questions or commands (see Examples in the Gradio UI).
 
-## Project Structure
-```bash
-quantized-falcon-rw-1b/
-├── app/
-│   ├── config.py             # Configuration for model ID and quantization settings
-│   ├── model_loader.py       # Logic for cached model and tokenizer loading
-│   ├── inference.py          # Text generation functionality
-│   └── ui_streamlit.py       # Streamlit frontend implementation
-├── notebooks/
-│   └── quantization.ipynb    # Jupyter notebook before refactoring
-├── requirements.txt          # Project dependencies
-├── README.md                # Project documentation
-└── .gitignore               # Git ignore file
+## What this project demonstrates
+
+- **Quantization-aware deployment** — loading a transformer LLM in NF4 with double quantization and `bfloat16` compute, with a clean fallback path for non-CUDA hardware (Apple Silicon MPS / CPU).
+- **Two-surface serving** — the same `model_loader` + `inference` core powers both a REST API (`/generate`) and an interactive Gradio web app, with no duplicated model-loading logic.
+- **Container-ready** — a single `Dockerfile` builds an image that can run either surface based on an environment variable.
+
+## Quantization at a glance
+
+| Method | Bits / param | Compute dtype | Memory vs FP32 |
+|---|---|---|---|
+| Float32 baseline | 32 | float32 | 1.00× |
+| BFloat16 | 16 | bfloat16 | 0.50× |
+| **NF4 + double quantization** *(this project)* | ~4.13 | bfloat16 | **~0.13×** |
+
+NF4 (4-bit NormalFloat) maps weights to 16 quantization levels chosen from the quantiles of a standard normal distribution, which is information-theoretically optimal for normally distributed weights. Double quantization additionally compresses the quantization constants, saving roughly **0.37 bits per parameter** on average. As reported in the QLoRA paper, NF4 with double quantization recovers full-precision performance on standard academic benchmarks while operating with a fraction of the memory.
+
+> Published evidence: "4-bit QLoRA with NF4 data type matches 16-bit full finetuning and 16-bit LoRA finetuning performance on academic benchmarks. NF4 is more effective than FP4 and double quantization does not degrade performance." — Dettmers et al., [QLoRA: Efficient Finetuning of Quantized LLMs (arXiv:2305.14314)](https://arxiv.org/abs/2305.14314). See also the [Hugging Face bitsandbytes 4-bit blog post](https://huggingface.co/blog/4bit-transformers-bitsandbytes).
+
+## Architecture
+
+```
+            ┌──────────────────────────┐
+  prompt -->│  Gradio UI (port 7861)   │──┐
+            └──────────────────────────┘  │
+                                          ▼
+                            ┌─────────────────────────┐
+                            │ app/inference.py        │
+                            │   generate_text(...)    │
+                            └────────────┬────────────┘
+                                         │
+                            ┌────────────▼────────────┐
+                            │ app/model_loader.py     │
+                            │   load_model() (cached) │
+                            │   ┌─ CUDA  -> NF4       │
+                            │   ├─ MPS   -> float16   │
+                            │   └─ CPU   -> float32   │
+                            └─────────────────────────┘
+                                         ▲
+            ┌──────────────────────────┐ │
+  HTTP --> │  FastAPI (port 8000)      │─┘
+           │  POST /generate           │
+           └──────────────────────────┘
 ```
 
+## Quick start
 
-## Quantization Overview
-Quantization reduces the precision of model weights and activations to lower-bit representations, enabling efficient inference with reduced memory and computational requirements. This project implements 4-bit NormalFloat (NF4) quantization, a format optimized for neural network weights, combined with double quantization to further compress quantization parameters. The `bitsandbytes` library facilitates this process, allowing the Falcon-RW 1B model to operate on hardware with limited resources while maintaining text generation quality. Key configurations include:
-- **NF4 Quantization**: Maps weights to a 4-bit representation optimized for normal distributions.
-- **Double Quantization**: Compresses quantization constants to minimize memory overhead.
-- **bfloat16 Compute Dtype**: Utilizes 16-bit brain floating-point format for efficient computation during inference.
+### Local — Gradio UI
 
-## Installation
-1. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Run the application**:
-   ```bash
-   streamlit run app/ui_streamlit.py
-   ```
+```bash
+pip install -r requirements.txt
+python -m app.ui_gradio
+# open http://localhost:7861
+```
 
-## Usage
-1. Launch the Streamlit application in a web browser (URL provided upon running the command above).
-2. Enter a text prompt (e.g., "Describe the applications of machine learning").
-3. Click the "Generate" button to produce text using the quantized Falcon-RW 1B model.
-4. View the generated text in the output section.
+### Local — FastAPI service
 
-## Performance Considerations
-- **Memory Efficiency**: 4-bit quantization reduces the model’s memory footprint by approximately 75% compared to full-precision (float32), enabling deployment on consumer-grade hardware.
-- **Inference Speed**: Cached model loading and optimized inference settings ensure responsive text generation.
-- **Device Flexibility**: The application automatically detects and utilizes available GPU (CUDA) or falls back to CPU.
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+# health check
+curl http://localhost:8000/health
+# generation
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Explain quantization in one paragraph.", "max_new_tokens": 150}'
+```
+
+### Docker
+
+```bash
+# Gradio (default) — mount the Hugging Face cache to avoid re-downloading the 2.5 GB model
+docker build -t falcon-nf4 .
+docker run --rm -p 7861:7861 -v ~/.cache/huggingface:/cache/huggingface falcon-nf4
+
+# FastAPI mode
+docker run --rm -e APP_MODE=api -p 8000:8000 -v ~/.cache/huggingface:/cache/huggingface falcon-nf4
+```
+
+For CUDA acceleration inside Docker, add `--gpus all` and switch to a CUDA-enabled base image
+(e.g. `nvidia/cuda:12.1.1-runtime-ubuntu22.04`).
+
+> **Memory note for CPU-only containers (e.g. Docker Desktop on Mac).** Falcon-RW-1B's load
+> path spikes well above the resident model size; we recommend giving Docker at least
+> **6 GB of RAM** (`Docker Desktop → Settings → Resources → Memory`). The container picks
+> `float16` on CPU, which keeps the model under ~2.6 GB but the loader and runtime headroom
+> push peak memory closer to 4 GB. Generation on CPU is slow (~1–2 tokens/sec); this
+> container is best suited as a *deployment-artifact demonstration*. For interactive use,
+> run on a CUDA-enabled host so NF4 quantization activates.
+
+## Hardware notes
+
+| Environment | NF4 quantization | Fallback path |
+|---|---|---|
+| Linux + NVIDIA GPU (CUDA) | ✅ Active | — |
+| Apple Silicon (MPS) | ❌ `bitsandbytes` requires CUDA | float16 on MPS |
+| CPU-only (incl. Docker on Mac) | ❌ | float16 on CPU |
+
+The `load_model()` helper detects CUDA automatically. Pass `use_quantization=True` to force NF4 (errors if CUDA unavailable) or `use_quantization=False` to load full-precision weights explicitly.
+
+## Project structure
+
+```
+quantized-falcon-rw-1b/
+├── app/
+│   ├── __init__.py
+│   ├── config.py          # Model ID + NF4 + generation defaults
+│   ├── model_loader.py    # Cached loader with CUDA/MPS/CPU paths
+│   ├── inference.py       # Pure generate_text() entry point
+│   ├── main.py            # FastAPI service (/health, /generate)
+│   └── ui_gradio.py       # Gradio Blocks interface
+├── notebooks/
+│   └── quantization.ipynb # Exploratory work before refactoring
+├── assets/
+│   └── demo.png
+├── Dockerfile
+├── requirements.txt
+└── README.md
+```
+
+## Tech stack
+
+| Layer | Tools |
+|---|---|
+| Model | `tiiuae/falcon-rw-1b` (Hugging Face) |
+| Quantization | `bitsandbytes` (NF4 + double quantization) |
+| Compute | PyTorch (bfloat16 / float16 / float32 depending on device) |
+| Serving | FastAPI + Uvicorn |
+| UI | Gradio (Blocks, Soft theme) |
+| Packaging | Docker |
+
+## References
+
+- Dettmers, T., Pagnoni, A., Holtzman, A., & Zettlemoyer, L. (2023). [QLoRA: Efficient Finetuning of Quantized LLMs](https://arxiv.org/abs/2305.14314). arXiv:2305.14314.
+- Hugging Face. [Making LLMs even more accessible with bitsandbytes, 4-bit quantization and QLoRA](https://huggingface.co/blog/4bit-transformers-bitsandbytes).
 
 ## License
-This project is licensed under the [MIT License](LICENSE).
+
+MIT — see [LICENSE](LICENSE).
