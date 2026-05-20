@@ -1,5 +1,6 @@
 # Falcon-RW 1B — 4-bit NF4 Quantized Text Generation
 
+[![Open in HF Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Open%20in-HF%20Spaces-blue)](https://huggingface.co/spaces/hameddaoud/quantized-falcon-rw-1b)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)
 ![Transformers](https://img.shields.io/badge/Transformers-4.40%2B-FFD21E?logo=huggingface&logoColor=black)
@@ -7,6 +8,8 @@
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
+
+**Live demo:** [hameddaoud/quantized-falcon-rw-1b on Hugging Face Spaces](https://huggingface.co/spaces/hameddaoud/quantized-falcon-rw-1b) — slow on free CPU tier (~1 tok/sec); duplicate to GPU hardware for NF4 quantization to activate.
 
 _Live demo recording coming soon — fresh screen capture of the Gradio UI to replace the prior Streamlit screenshot._
 

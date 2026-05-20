@@ -19,5 +19,6 @@ COPY app/ ./app/
 EXPOSE 7861 8000
 
 # APP_MODE=api -> FastAPI on 8000; anything else -> Gradio on 7861
-ENV APP_MODE=gradio
+ENV APP_MODE=gradio \
+    GRADIO_SERVER_PORT=7861
 CMD ["sh", "-c", "if [ \"$APP_MODE\" = \"api\" ]; then uvicorn app.main:app --host 0.0.0.0 --port 8000; else python -m app.ui_gradio; fi"]

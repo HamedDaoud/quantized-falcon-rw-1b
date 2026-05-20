@@ -84,4 +84,6 @@ with gr.Blocks(theme=gr.themes.Soft(), title="Falcon-RW 1B - NF4 Quantized") as 
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7861)
+    import os
+    port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
+    demo.launch(server_name="0.0.0.0", server_port=port)
