@@ -32,7 +32,7 @@ def run_generation(prompt: str, max_new_tokens: int, temperature: float, top_p: 
 EXAMPLES = [
     ["Once upon a time, there was a robot named Atlas who lived in a small workshop on the edge of the city.", 150, 0.9, 0.95, 7],
     ["In machine learning, overfitting refers to the phenomenon where", 120, 0.6, 0.9, 42],
-    ["def fibonacci(n):\n    \"\"\"Return the n-th Fibonacci number.\"\"\"\n    ", 100, 0.4, 0.9, 0],
+    ["The lighthouse keeper noticed something strange in the distance — ", 150, 0.85, 0.95, 3],
     ["Dear Hiring Manager,\n\nI am writing to apply for the Machine Learning Engineer position at", 180, 0.7, 0.9, 12],
 ]
 
