@@ -1,3 +1,6 @@
+> ### ▶ **Try it live:** [hameddaoud/quantized-falcon-rw-1b on Hugging Face Spaces](https://huggingface.co/spaces/hameddaoud/quantized-falcon-rw-1b)
+> _Slow on the free CPU tier (~1 tok/sec); duplicate to GPU hardware for NF4 quantization to activate._
+
 # Falcon-RW 1B — 4-bit NF4 Quantized Text Generation
 
 [![Open in HF Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Open%20in-HF%20Spaces-blue)](https://huggingface.co/spaces/hameddaoud/quantized-falcon-rw-1b)
@@ -9,17 +12,15 @@
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green)
 
-**Live demo:** [hameddaoud/quantized-falcon-rw-1b on Hugging Face Spaces](https://huggingface.co/spaces/hameddaoud/quantized-falcon-rw-1b) — slow on free CPU tier (~1 tok/sec); duplicate to GPU hardware for NF4 quantization to activate.
-
-_Live demo recording coming soon — fresh screen capture of the Gradio UI to replace the prior Streamlit screenshot._
+![Gradio UI for the quantized Falcon-RW 1B Space](assets/demo.png)
 
 A text generation application that loads [`tiiuae/falcon-rw-1b`](https://huggingface.co/tiiuae/falcon-rw-1b) under **4-bit NormalFloat (NF4) quantization** with **double quantization** via `bitsandbytes`, exposed through both a Gradio UI and a FastAPI service. The 4-bit weights are paired with a `bfloat16` compute dtype, reducing the model's memory footprint by approximately **75% versus float32** while preserving generation quality.
 
-> **About the model.** Falcon-RW-1B is a 1.3B-parameter *base* language model — it completes text rather than following instructions, and at this size it's well below the capability of modern instruction-tuned chat models. **This project's contribution is the quantization technique, deployment surface, and device-fallback engineering — not state-of-the-art generation quality.** Prompts that work best are the start of a passage rather than questions or commands (see Examples in the Gradio UI).
+> **About the model.** Falcon-RW-1B is a 1.3B-parameter *base* language model — it completes text rather than following instructions, and at this size it's well below the capability of modern instruction-tuned chat models. **This project's contribution is the quantization technique, deployment surface, and cross-device fallback engineering — not state-of-the-art generation quality.** Prompts that work best are the start of a passage rather than questions or commands (see Examples in the Gradio UI).
 
 ## What this project demonstrates
 
-- **Quantization-aware deployment** — loading a transformer LLM in NF4 with double quantization and `bfloat16` compute, with a clean fallback path for non-CUDA hardware (Apple Silicon MPS / CPU).
+- **Quantization-aware deployment** — loading a transformer LLM in NF4 with double quantization and `bfloat16` compute, with a CUDA → MPS → CPU fallback chain for non-NVIDIA hardware.
 - **Two-surface serving** — the same `model_loader` + `inference` core powers both a REST API (`/generate`) and an interactive Gradio web app, with no duplicated model-loading logic.
 - **Container-ready** — a single `Dockerfile` builds an image that can run either surface based on an environment variable.
 
@@ -85,8 +86,10 @@ curl -X POST http://localhost:8000/generate \
 
 ### Docker
 
+The commands below mount your local Hugging Face cache so the 2.5 GB model isn't re-downloaded on every container start. Substitute the cache path as needed for your OS.
+
 ```bash
-# Gradio (default) — mount the Hugging Face cache to avoid re-downloading the 2.5 GB model
+# macOS / Linux
 docker build -t falcon-nf4 .
 docker run --rm -p 7861:7861 -v ~/.cache/huggingface:/cache/huggingface falcon-nf4
 
@@ -94,24 +97,21 @@ docker run --rm -p 7861:7861 -v ~/.cache/huggingface:/cache/huggingface falcon-n
 docker run --rm -e APP_MODE=api -p 8000:8000 -v ~/.cache/huggingface:/cache/huggingface falcon-nf4
 ```
 
-For CUDA acceleration inside Docker, add `--gpus all` and switch to a CUDA-enabled base image
-(e.g. `nvidia/cuda:12.1.1-runtime-ubuntu22.04`).
+```powershell
+# Windows (PowerShell)
+docker build -t falcon-nf4 .
+docker run --rm -p 7861:7861 -v "$env:USERPROFILE\.cache\huggingface:/cache/huggingface" falcon-nf4
+```
 
-> **Memory note for CPU-only containers (e.g. Docker Desktop on Mac).** Falcon-RW-1B's load
-> path spikes well above the resident model size; we recommend giving Docker at least
-> **6 GB of RAM** (`Docker Desktop → Settings → Resources → Memory`). The container picks
-> `float16` on CPU, which keeps the model under ~2.6 GB but the loader and runtime headroom
-> push peak memory closer to 4 GB. Generation on CPU is slow (~1–2 tokens/sec); this
-> container is best suited as a *deployment-artifact demonstration*. For interactive use,
-> run on a CUDA-enabled host so NF4 quantization activates.
+For CUDA acceleration inside Docker, add `--gpus all` and switch to a CUDA-enabled base image (e.g. `nvidia/cuda:12.1.1-runtime-ubuntu22.04`). On CPU-only containers generation is slow (~1–2 tokens/sec) and this image is best treated as a deployment-artifact demonstration; for interactive use, run on a CUDA-enabled host so NF4 quantization activates.
 
 ## Hardware notes
 
-| Environment | NF4 quantization | Fallback path |
+| Environment | NF4 quantization | Compute path |
 |---|---|---|
-| Linux + NVIDIA GPU (CUDA) | ✅ Active | — |
+| NVIDIA GPU (CUDA) | ✅ Active | NF4 + bfloat16 |
 | Apple Silicon (MPS) | ❌ `bitsandbytes` requires CUDA | float16 on MPS |
-| CPU-only (incl. Docker on Mac) | ❌ | float16 on CPU |
+| CPU-only | ❌ | float16 on CPU |
 
 The `load_model()` helper detects CUDA automatically. Pass `use_quantization=True` to force NF4 (errors if CUDA unavailable) or `use_quantization=False` to load full-precision weights explicitly.
 
