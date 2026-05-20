@@ -1,18 +1,25 @@
-import torch
-from app.config import DEVICE, INFERENCE_SETTINGS
+"""Text generation entrypoint shared by the FastAPI service and the Gradio UI."""
 
-def generate_text(model, tokenizer, prompt, seed=42):
+from __future__ import annotations
+
+import torch
+
+from app.config import INFERENCE_DEFAULTS
+
+
+def generate_text(model, tokenizer, prompt: str, seed: int = 42, **overrides) -> str:
     torch.manual_seed(seed)
 
-    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
+    settings = {**INFERENCE_DEFAULTS, **overrides}
 
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=INFERENCE_SETTINGS["max_new_tokens"],
-        do_sample=True,
-        temperature=INFERENCE_SETTINGS["temperature"],
-        top_p=INFERENCE_SETTINGS["top_p"],
-        pad_token_id=tokenizer.pad_token_id  # avoids warning
-    )
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    with torch.inference_mode():
+        outputs = model.generate(
+            **inputs,
+            **settings,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+
+    generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+    return tokenizer.decode(generated_tokens, skip_special_tokens=True)
